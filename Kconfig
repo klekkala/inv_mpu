@@ -12,13 +12,17 @@ config INV_MPU_IIO
 	  This driver can be built as a module. The module will be called
 	  inv-mpu-iio.
 
-config INV_IIO_MPU3050_ACCEL_SLAVE_BMA250
-	bool  "Invensense MPU3050 slave accelerometer device for bma250"
-	depends on INV_MPU_IIO
-	default n
+
+config INV_MPU9150_I2C
+	tristate "Invensense MPU9150 devices (I2C)"
+	depends on I2C_MUX
+	select INV_MPU9150_IIO
+	select REGMAP_I2C
 	help
-	  This is slave device enable MPU3050 accelerometer slave device.
-	  Right now, it is only bma250. For other acceleromter device,
-	  it can be added to this menu if the proper interface is filled.
-	  There are some interface function to be defined.
+	  This driver supports the Invensense MPU6050/6500/9150 motion tracking
+	  devices over I2C.
+	  This driver can be built as a module. The module will be called
+	  inv-mpu9150-i2c.
+
+
 
