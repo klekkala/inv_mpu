@@ -11,18 +11,4 @@ config INV_MPU_IIO
 	  This includes MPU6050/MPU3050/MPU9150/ITG3500/MPU6500/MPU9250.
 	  This driver can be built as a module. The module will be called
 	  inv-mpu-iio.
-
-
-config INV_MPU9150_I2C
-	tristate "Invensense MPU9150 devices (I2C)"
-	depends on I2C_MUX
-	select INV_MPU9150_IIO
-	select REGMAP_I2C
-	help
-	  This driver supports the Invensense MPU6050/6500/9150 motion tracking
-	  devices over I2C.
-	  This driver can be built as a module. The module will be called
-	  inv-mpu9150-i2c.
-
-
-
+	  
