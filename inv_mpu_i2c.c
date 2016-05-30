@@ -24,10 +24,10 @@ static const struct regmap_config inv_mpu_regmap_config = {
 	.val_bits = 8,
 };
 
-static int inv_mpu6050_select_bypass(struct i2c_mux_core *muxc, u32 chan_id)
+static int inv_mpu9150_select_bypass(struct i2c_mux_core *muxc, u32 chan_id)
 {
 	struct iio_dev *indio_dev = i2c_mux_priv(muxc);
-	struct inv_mpu6050_state *st = iio_priv(indio_dev);
+	struct inv_mpu9150_state *st = iio_priv(indio_dev);
 	int ret = 0;
 
 	/* Use the same mutex which was used everywhere to protect power-op */
