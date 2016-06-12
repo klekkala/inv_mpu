@@ -1190,6 +1190,265 @@ static ssize_t inv_attr_show(struct device *dev,
 	}
 }
 
+static ssize_t _attr_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct inv_mpu_state *st = iio_priv(indio_dev);
+	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
+	int data;
+	u8 d, axis;
+	int result;
+
+	result = 0;
+	if (st->chip_config.enable)
+		return -EBUSY;
+	if (this_attr->address <= ATTR_MOTION_LPA_THRESHOLD) {
+		result = st->set_power_state(st, true);
+		if (result)
+			return result;
+	}
+
+	/* check the input and validate it's format */
+	switch (this_attr->address) {
+#ifdef CONFIG_INV_TESTING
+	/* these inputs are strings */
+	case ATTR_COMPASS_MATRIX:
+	case ATTR_COMPASS_SENS:
+		break;
+#endif
+	/* these inputs are integers */
+	default:
+		result = kstrtoint(buf, 10, &data);
+		if (result)
+			goto attr_store_fail;
+		break;
+	}
+
+	switch (this_attr->address) {
+	case ATTR_GYRO_X_OFFSET:
+	case ATTR_GYRO_Y_OFFSET:
+	case ATTR_GYRO_Z_OFFSET:
+		if ((data > MPU_MAX_G_OFFSET_VALUE) ||
+				(data < MPU_MIN_G_OFFSET_VALUE))
+			return -EINVAL;
+		axis = this_attr->address - ATTR_GYRO_X_OFFSET;
+		result = inv_set_offset_reg(st,
+				reg_gyro_offset[axis],
+				st->rom_gyro_offset[axis] + data);
+
+		if (result)
+			goto attr_store_fail;
+		st->input_gyro_offset[axis] = data;
+		break;
+	case ATTR_ACCEL_X_OFFSET:
+	case ATTR_ACCEL_Y_OFFSET:
+	case ATTR_ACCEL_Z_OFFSET:
+	{
+		const u8 *ch;
+
+		if ((data > MPU_MAX_A_OFFSET_VALUE) ||
+			(data < MPU_MIN_A_OFFSET_VALUE))
+			return -EINVAL;
+
+		axis = this_attr->address - ATTR_ACCEL_X_OFFSET;
+		if (INV_MPU6050 == st->chip_type)
+			ch = reg_6050_accel_offset;
+		else
+			ch = reg_6500_accel_offset;
+
+		result = inv_set_offset_reg(st, ch[axis],
+			st->rom_accel_offset[axis] + (data << 1));
+		if (result)
+			goto attr_store_fail;
+		st->input_accel_offset[axis] = data;
+		break;
+	}
+	case ATTR_GYRO_SCALE:
+		result = inv_write_fsr(st, data);
+		break;
+	case ATTR_ACCEL_SCALE:
+		result = inv_write_accel_fs(st, data);
+		break;
+	case ATTR_COMPASS_SCALE:
+		result = st->slave_compass->set_scale(st, data);
+		break;
+	case ATTR_SELF_TEST_SAMPLES:
+		if (data > ST_MAX_SAMPLES || data < 0) {
+			result = -EINVAL;
+			goto attr_store_fail;
+		}
+		st->self_test.samples = data;
+		break;
+	case ATTR_SELF_TEST_THRESHOLD:
+		if (data > ST_MAX_THRESHOLD || data < 0) {
+			result = -EINVAL;
+			goto attr_store_fail;
+		}
+		st->self_test.threshold = data;
+	case ATTR_GYRO_ENABLE:
+		st->chip_config.gyro_enable = !!data;
+		break;
+	case ATTR_GYRO_FIFO_ENABLE:
+		st->sensor[SENSOR_GYRO].on = !!data;
+		break;
+	case ATTR_GYRO_RATE:
+		st->sensor[SENSOR_GYRO].rate = data;
+		st->sensor[SENSOR_GYRO].dur  = MPU_DEFAULT_DMP_FREQ / data;
+		st->sensor[SENSOR_GYRO].dur  *= DMP_INTERVAL_INIT;
+		break;
+	case ATTR_ACCEL_ENABLE:
+		st->chip_config.accel_enable = !!data;
+		break;
+	case ATTR_ACCEL_FIFO_ENABLE:
+		st->sensor[SENSOR_ACCEL].on = !!data;
+		break;
+	case ATTR_ACCEL_RATE:
+		st->sensor[SENSOR_ACCEL].rate = data;
+		st->sensor[SENSOR_ACCEL].dur  = MPU_DEFAULT_DMP_FREQ / data;
+		st->sensor[SENSOR_ACCEL].dur  *= DMP_INTERVAL_INIT;
+		break;
+	case ATTR_COMPASS_ENABLE:
+		st->sensor[SENSOR_COMPASS].on = !!data;
+		break;
+	case ATTR_COMPASS_RATE:
+		if (data <= 0) {
+			result = -EINVAL;
+			goto attr_store_fail;
+		}
+		if ((MSEC_PER_SEC / st->slave_compass->rate_scale) < data)
+			data = MSEC_PER_SEC / st->slave_compass->rate_scale;
+
+		st->sensor[SENSOR_COMPASS].rate = data;
+		st->sensor[SENSOR_COMPASS].dur  = MPU_DEFAULT_DMP_FREQ / data;
+		st->sensor[SENSOR_COMPASS].dur  *= DMP_INTERVAL_INIT;
+		break;
+	case ATTR_PRESSURE_ENABLE:
+		st->sensor[SENSOR_PRESSURE].on = !!data;
+		break;
+	case ATTR_PRESSURE_RATE:
+		if (data <= 0) {
+			result = -EINVAL;
+			goto attr_store_fail;
+		}
+		if ((MSEC_PER_SEC / st->slave_pressure->rate_scale) < data)
+			data = MSEC_PER_SEC / st->slave_pressure->rate_scale;
+
+		st->sensor[SENSOR_PRESSURE].rate = data;
+		st->sensor[SENSOR_PRESSURE].dur  = MPU_DEFAULT_DMP_FREQ / data;
+		st->sensor[SENSOR_PRESSURE].dur  *= DMP_INTERVAL_INIT;
+		break;
+	case ATTR_POWER_STATE:
+		fake_asleep = !data;
+		break;
+	case ATTR_FIRMWARE_LOADED:
+		result = inv_firmware_loaded(st, data);
+		break;
+	case ATTR_SAMPLING_FREQ:
+		result = inv_fifo_rate_store(st, data);
+		break;
+#ifdef CONFIG_INV_TESTING
+	case ATTR_COMPASS_MATRIX:
+	{
+		char *str;
+		__s8 m[9];
+		d = 0;
+		if (st->plat_data.sec_slave_type == SECONDARY_SLAVE_TYPE_NONE)
+			return -ENODEV;
+		while ((str = strsep((char **)&buf, ","))) {
+			if (d >= 9) {
+				result = -EINVAL;
+				goto attr_store_fail;
+			}
+			result = kstrtoint(str, 10, &data);
+			if (result)
+				goto attr_store_fail;
+			if (data < -1 || data > 1) {
+				result = -EINVAL;
+				goto attr_store_fail;
+			}
+			m[d] = data;
+			d++;
+		}
+		if (d < 9) {
+			result = -EINVAL;
+			goto attr_store_fail;
+		}
+		memcpy(st->plat_data.secondary_orientation, m, sizeof(m));
+		pr_debug(KERN_INFO
+			 "compass_matrix: %d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+			 m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+		break;
+	}
+	case ATTR_COMPASS_SENS:
+	{
+		char *str;
+		__s8 s[3];
+		d = 0;
+		/* these 2 conditions should never be met, since the
+		   'compass_sens' sysfs entry should be hidden if the compass
+		   is not an AKM */
+		if (st->plat_data.sec_slave_type == SECONDARY_SLAVE_TYPE_NONE)
+			return -ENODEV;
+		if (st->plat_data.sec_slave_id != COMPASS_ID_AK8975 &&
+		    st->plat_data.sec_slave_id != COMPASS_ID_AK8972 &&
+		    st->plat_data.sec_slave_id != COMPASS_ID_AK8963)
+			return -ENODEV;
+		/* read the input data, expecting 3 comma separated values */
+		while ((str = strsep((char **)&buf, ","))) {
+			if (d >= 3) {
+				result = -EINVAL;
+				goto attr_store_fail;
+			}
+			result = kstrtoint(str, 10, &data);
+			if (result)
+				goto attr_store_fail;
+			if (data < 0 || data > 255) {
+				result = -EINVAL;
+				goto attr_store_fail;
+			}
+			s[d] = data;
+			d++;
+		}
+		if (d < 3) {
+			result = -EINVAL;
+			goto attr_store_fail;
+		}
+		/* store the new compass sensitivity adjustment */
+		memcpy(st->chip_info.compass_sens, s, sizeof(s));
+		pr_debug(KERN_INFO
+			 "compass_sens: %d,%d,%d\n", s[0], s[1], s[2]);
+		break;
+	}
+#endif
+	default:
+		result = -EINVAL;
+		goto attr_store_fail;
+	};
+
+attr_store_fail:
+	if (this_attr->address <= ATTR_MOTION_LPA_THRESHOLD)
+		result |= st->set_power_state(st, false);
+	if (result)
+		return result;
+
+	return count;
+}
+
+
+static ssize_t inv_attr_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	int result;
+
+	mutex_lock(&indio_dev->mlock);
+	result = _attr_store(dev, attr, buf, count);
+	mutex_unlock(&indio_dev->mlock);
+
+	return result;
+}
+
 
 /**
  * inv_mpu6050_validate_trigger() - validate_trigger callback for invensense
@@ -1445,46 +1704,13 @@ static IIO_DEVICE_ATTR(gyro_matrix, S_IRUGO, inv_attr_show, NULL,
 	ATTR_GYRO_MATRIX);
 static IIO_DEVICE_ATTR(accel_matrix, S_IRUGO, inv_attr_show, NULL,
 	ATTR_ACCEL_MATRIX);
-#ifdef CONFIG_INV_TESTING /* read/write in test mode */
 static IIO_DEVICE_ATTR(compass_matrix, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_COMPASS_MATRIX);
 static IIO_DEVICE_ATTR(compass_sens, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_COMPASS_SENS);
-#else
 static IIO_DEVICE_ATTR(compass_matrix, S_IRUGO, inv_attr_show, NULL,
 	ATTR_COMPASS_MATRIX);
-#endif
-static IIO_DEVICE_ATTR(secondary_name, S_IRUGO, inv_attr_show, NULL,
-	ATTR_SECONDARY_NAME);
 
-#ifdef CONFIG_INV_TESTING
-static IIO_DEVICE_ATTR(reg_write, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_reg_write_store, ATTR_REG_WRITE);
-/* smd debug related sysfs */
-static IIO_DEVICE_ATTR(debug_smd_enable_testp1, S_IWUSR, NULL,
-	inv_dmp_attr_store, ATTR_DEBUG_SMD_ENABLE_TESTP1);
-static IIO_DEVICE_ATTR(debug_smd_enable_testp2, S_IWUSR, NULL,
-	inv_dmp_attr_store, ATTR_DEBUG_SMD_ENABLE_TESTP2);
-static IIO_DEVICE_ATTR(debug_smd_exe_state, S_IRUGO, inv_attr_show,
-	NULL, ATTR_DEBUG_SMD_EXE_STATE);
-static IIO_DEVICE_ATTR(debug_smd_delay_cntr, S_IRUGO, inv_attr_show,
-	NULL, ATTR_DEBUG_SMD_DELAY_CNTR);
-static DEVICE_ATTR(test_suspend_resume, S_IRUGO | S_IWUSR,
-		inv_test_suspend_resume_show, inv_test_suspend_resume_store);
-
-static IIO_DEVICE_ATTR(test_gyro_counter, S_IRUGO | S_IWUSR, inv_test_show,
-	inv_test_store, ATTR_DEBUG_GYRO_COUNTER);
-static IIO_DEVICE_ATTR(test_accel_counter, S_IRUGO | S_IWUSR, inv_test_show,
-	inv_test_store, ATTR_DEBUG_ACCEL_COUNTER);
-static IIO_DEVICE_ATTR(test_compass_counter, S_IRUGO | S_IWUSR, inv_test_show,
-	inv_test_store, ATTR_DEBUG_COMPASS_COUNTER);
-static IIO_DEVICE_ATTR(test_LPQ_counter, S_IRUGO | S_IWUSR, inv_test_show,
-	inv_test_store, ATTR_DEBUG_LPQ_COUNTER);
-static IIO_DEVICE_ATTR(test_SIXQ_counter, S_IRUGO | S_IWUSR, inv_test_show,
-	inv_test_store, ATTR_DEBUG_SIXQ_COUNTER);
-static IIO_DEVICE_ATTR(test_PEDQ_counter, S_IRUGO | S_IWUSR, inv_test_show,
-	inv_test_store, ATTR_DEBUG_PEDQ_COUNTER);
-#endif
 
 
 /* Newly modified inv_attributes from android driver */
