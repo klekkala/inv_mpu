@@ -960,7 +960,6 @@ static DEVICE_ATTR(event_display_orientation, S_IRUGO,
 	inv_dmp_display_orient_show, NULL);
 static DEVICE_ATTR(event_accel_motion, S_IRUGO, inv_accel_motion_show, NULL);
 static DEVICE_ATTR(event_smd, S_IRUGO, inv_smd_show, NULL);
-static DEVICE_ATTR(event_pedometer, S_IRUGO, inv_ped_show, NULL);
 
 /* master enable method */
 static DEVICE_ATTR(master_enable, S_IRUGO | S_IWUSR, inv_master_enable_show,
@@ -984,11 +983,6 @@ static IIO_DEVICE_ATTR(in_anglvel_y_dmp_bias, S_IRUGO | S_IWUSR,
 static IIO_DEVICE_ATTR(in_anglvel_z_dmp_bias, S_IRUGO | S_IWUSR,
 	inv_attr_show, inv_dmp_bias_store, ATTR_DMP_GYRO_Z_DMP_BIAS);
 
-static IIO_DEVICE_ATTR(pedometer_int_on, S_IRUGO | S_IWUSR,
-	inv_attr_show, inv_dmp_attr_store, ATTR_DMP_PED_INT_ON);
-static IIO_DEVICE_ATTR(pedometer_on, S_IRUGO | S_IWUSR,
-	inv_attr_show, inv_dmp_attr_store, ATTR_DMP_PED_ON);
-
 static IIO_DEVICE_ATTR(smd_enable, S_IRUGO | S_IWUSR,
 	inv_attr_show, inv_dmp_attr_store, ATTR_DMP_SMD_ENABLE);
 static IIO_DEVICE_ATTR(smd_threshold, S_IRUGO | S_IWUSR,
@@ -998,10 +992,6 @@ static IIO_DEVICE_ATTR(smd_delay_threshold, S_IRUGO | S_IWUSR,
 static IIO_DEVICE_ATTR(smd_delay_threshold2, S_IRUGO | S_IWUSR,
 	inv_attr_show, inv_dmp_attr_store, ATTR_DMP_SMD_DELAY_THLD2);
 
-static IIO_DEVICE_ATTR(pedometer_steps, S_IRUGO | S_IWUSR, inv_attr64_show,
-	inv_attr64_store, ATTR_DMP_PEDOMETER_STEPS);
-static IIO_DEVICE_ATTR(pedometer_time, S_IRUGO | S_IWUSR, inv_attr64_show,
-	inv_attr64_store, ATTR_DMP_PEDOMETER_TIME);
 
 static IIO_DEVICE_ATTR(tap_on, S_IRUGO | S_IWUSR,
 	inv_attr_show, inv_dmp_attr_store, ATTR_DMP_TAP_ON);
@@ -1196,7 +1186,6 @@ static struct attribute *inv_attributes[] = {
 	&iio_dev_attr_secondary_name.dev_attr.attr,
 	&dev_attr_event_accel_motion.attr,
 	&dev_attr_event_smd.attr,
-	&dev_attr_event_pedometer.attr,
 	&dev_attr_flush_batch.attr,
 	&iio_dev_attr_in_accel_scale.dev_attr.attr,
 	&iio_dev_attr_in_accel_x_calibbias.dev_attr.attr,
@@ -1212,10 +1201,6 @@ static struct attribute *inv_attributes[] = {
 	&iio_dev_attr_in_anglvel_x_dmp_bias.dev_attr.attr,
 	&iio_dev_attr_in_anglvel_y_dmp_bias.dev_attr.attr,
 	&iio_dev_attr_in_anglvel_z_dmp_bias.dev_attr.attr,
-	&iio_dev_attr_pedometer_int_on.dev_attr.attr,
-	&iio_dev_attr_pedometer_on.dev_attr.attr,
-	&iio_dev_attr_pedometer_steps.dev_attr.attr,
-	&iio_dev_attr_pedometer_time.dev_attr.attr,
 	&iio_dev_attr_smd_enable.dev_attr.attr,
 	&iio_dev_attr_smd_threshold.dev_attr.attr,
 	&iio_dev_attr_smd_delay_threshold.dev_attr.attr,
