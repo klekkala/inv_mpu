@@ -1,24 +1,30 @@
 #
-# inv-mpu-iio driver for Invensense MPU devices and combos
+# inv-mpu6050 drivers for Invensense MPU devices and combos
 #
 
-config INV_MPU_IIO
-	tristate "Invensense MPU devices"
-	depends on I2C && SYSFS && IIO && IIO_KFIFO_BUF && IIO_TRIGGER && !INV_MPU
-	default n
+config INV_MPU6050_IIO
+	tristate
+	select IIO_BUFFER
+	select IIO_TRIGGERED_BUFFER
+
+config INV_MPU6050_I2C
+	tristate "Invensense MPU6050 devices (I2C)"
+	depends on I2C_MUX
+	select INV_MPU6050_IIO
+	select REGMAP_I2C
 	help
-	  This driver supports the Invensense MPU devices.
-	  This includes MPU6050/MPU3050/MPU9150/ITG3500/MPU6500/MPU9250.
+	  This driver supports the Invensense MPU6050/6500/9150 motion tracking
+	  devices over I2C.
 	  This driver can be built as a module. The module will be called
-	  inv-mpu-iio.
+	  inv-mpu6050-i2c.
 
-config INV_IIO_MPU3050_ACCEL_SLAVE_BMA250
-	bool  "Invensense MPU3050 slave accelerometer device for bma250"
-	depends on INV_MPU_IIO
-	default n
+config INV_MPU6050_SPI
+	tristate "Invensense MPU6050 devices (SPI)"
+	depends on SPI_MASTER
+	select INV_MPU6050_IIO
+	select REGMAP_SPI
 	help
-	  This is slave device enable MPU3050 accelerometer slave device.
-	  Right now, it is only bma250. For other acceleromter device,
-	  it can be added to this menu if the proper interface is filled.
-	  There are some interface function to be defined.
-
+	  This driver supports the Invensense MPU6000/6500/9150 motion tracking
+	  devices over SPI.
+	  This driver can be built as a module. The module will be called
+	  inv-mpu6050-spi.
