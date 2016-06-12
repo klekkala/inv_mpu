@@ -23,7 +23,7 @@
 #include <linux/iio/triggered_buffer.h>
 #include <linux/iio/trigger_consumer.h>
 #include <linux/platform_data/invensense_mpu6050.h>
-
+#include "dmpKey.h"
 /**
  *  struct inv_mpu6050_reg_map - Notable registers.
  *  @sample_rate_div:	Divider applied to gyro output rate.
@@ -90,6 +90,9 @@ struct inv_mpu6050_chip_config {
 	unsigned int accl_fs:2;
 	unsigned int enable:1;
 	unsigned int has_compass:1;
+	unsigned int dmp_on:1;
+	unsigned int dmp_int_on:1;
+	unsigned int dmp_event_int_on:1;
 	unsigned int accl_fifo_enable:1;
 	unsigned int gyro_fifo_enable:1;
 	unsigned int magn_fifo_enable:1;
@@ -259,8 +262,81 @@ enum inv_mpu6050_filter_e {
 
 /* IIO attribute address */
 enum INV_MPU6050_IIO_ATTR_ADDR {
+	ATTR_DMP_GYRO_X_DMP_BIAS,
+	ATTR_DMP_GYRO_Y_DMP_BIAS,
+	ATTR_DMP_GYRO_Z_DMP_BIAS,
+	ATTR_DMP_ACCEL_X_DMP_BIAS,
+	ATTR_DMP_ACCEL_Y_DMP_BIAS,
+	ATTR_DMP_ACCEL_Z_DMP_BIAS,
+	ATTR_DMP_PED_INT_ON,
+	ATTR_DMP_PED_ON,
+	ATTR_DMP_SMD_ENABLE,
+	ATTR_DMP_SMD_THLD,
+	ATTR_DMP_SMD_DELAY_THLD,
+	ATTR_DMP_SMD_DELAY_THLD2,
+	ATTR_DMP_PEDOMETER_STEPS,
+	ATTR_DMP_PEDOMETER_TIME,
+	ATTR_DMP_TAP_ON,
+	ATTR_DMP_TAP_THRESHOLD,
+	ATTR_DMP_TAP_MIN_COUNT,
+	ATTR_DMP_TAP_TIME,
+	ATTR_DMP_DISPLAY_ORIENTATION_ON,
+/* *****above this line, are DMP features, power needs on/off */
+/* *****below this line, are DMP features, no power needed */
+	ATTR_DMP_ON,
+	ATTR_DMP_INT_ON,
+	ATTR_DMP_EVENT_INT_ON,
+	ATTR_DMP_STEP_INDICATOR_ON,
+	ATTR_DMP_BATCHMODE_TIMEOUT,
+	ATTR_DMP_BATCHMODE_WAKE_FIFO_FULL,
+	ATTR_DMP_SIX_Q_ON,
+	ATTR_DMP_SIX_Q_RATE,
+	ATTR_DMP_LPQ_ON,
+	ATTR_DMP_LPQ_RATE,
+	ATTR_DMP_PED_Q_ON,
+	ATTR_DMP_PED_Q_RATE,
+	ATTR_DMP_STEP_DETECTOR_ON,
+	ATTR_DMP_STEP_DETECTOR_RATE,
+/*  *****above this line, it is all DMP related features */
+/*  *****below this line, it is all non-DMP related features */
+	ATTR_GYRO_SCALE,
+	ATTR_ACCEL_SCALE,
+	ATTR_COMPASS_SCALE,
+	ATTR_GYRO_X_OFFSET,
+	ATTR_GYRO_Y_OFFSET,
+	ATTR_GYRO_Z_OFFSET,
+	ATTR_ACCEL_X_OFFSET,
+	ATTR_ACCEL_Y_OFFSET,
+	ATTR_ACCEL_Z_OFFSET,
+/*  *****above this line, it is non-DMP, power needs on/off */
+/*  *****below this line, it is non-DMP, no needs to on/off power */
+	ATTR_SELF_TEST_SAMPLES,
+	ATTR_SELF_TEST_THRESHOLD,
+	ATTR_GYRO_ENABLE,
+	ATTR_GYRO_FIFO_ENABLE,
+	ATTR_GYRO_RATE,
+	ATTR_ACCEL_ENABLE,
+	ATTR_ACCEL_FIFO_ENABLE,
+	ATTR_ACCEL_RATE,
+	ATTR_COMPASS_ENABLE,
+	ATTR_COMPASS_RATE,
+	ATTR_POWER_STATE, /* this is fake sysfs for compatibility */
+	ATTR_FIRMWARE_LOADED,
+	ATTR_SAMPLING_FREQ,
+/*  *****below this line, it is attributes only has show methods */
+	ATTR_SELF_TEST, /* this has show-only methods needs power on/off */
+	ATTR_GYRO_X_CALIBBIAS,
+	ATTR_GYRO_Y_CALIBBIAS,
+	ATTR_GYRO_Z_CALIBBIAS,
+	ATTR_ACCEL_X_CALIBBIAS,
+	ATTR_ACCEL_Y_CALIBBIAS,
+	ATTR_ACCEL_Z_CALIBBIAS,
+	ATTR_SELF_TEST_GYRO_SCALE,
+	ATTR_SELF_TEST_ACCEL_SCALE,
 	ATTR_GYRO_MATRIX,
-	ATTR_ACCL_MATRIX,
+	ATTR_ACCEL_MATRIX,
+	ATTR_COMPASS_MATRIX,
+	ATTR_SECONDARY_NAME,
 };
 
 enum inv_mpu6050_accl_fs_e {
