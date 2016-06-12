@@ -953,7 +953,6 @@ static IIO_DEVICE_ATTR(gyro_enable, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_GYRO_ENABLE);
 /* special sysfs */
 static DEVICE_ATTR(reg_dump, S_IRUGO, inv_reg_dump_show, NULL);
-static DEVICE_ATTR(temperature, S_IRUGO, inv_temperature_show, NULL);
 
 /* event based sysfs, needs poll to read */
 static DEVICE_ATTR(event_tap, S_IRUGO, inv_dmp_tap_show, NULL);
@@ -1176,7 +1175,6 @@ static IIO_DEVICE_ATTR(test_PEDQ_counter, S_IRUGO | S_IWUSR, inv_test_show,
 static struct attribute *inv_attributes[] = {
 	&iio_const_attr_sampling_frequency_available.dev_attr.attr,
 	&dev_attr_reg_dump.attr,
-	&dev_attr_temperature.attr,
 	&dev_attr_master_enable.attr,
 	&iio_dev_attr_in_anglvel_scale.dev_attr.attr,
 	&iio_dev_attr_in_anglvel_x_calibbias.dev_attr.attr,
