@@ -743,17 +743,6 @@ static ssize_t inv_attr_show(struct device *dev,
 		return sprintf(buf, "%d\n", st->sensor[SENSOR_PEDQ].rate);
 	case ATTR_DMP_STEP_DETECTOR_ON:
 		return sprintf(buf, "%d\n", st->sensor[SENSOR_STEP].on);
-	case ATTR_MOTION_LPA_ON:
-		return sprintf(buf, "%d\n", st->mot_int.mot_on);
-	case ATTR_MOTION_LPA_FREQ:{
-		const char *f[] = {"1.25", "5", "20", "40"};
-		return sprintf(buf, "%s\n", f[st->chip_config.lpa_freq]);
-	}
-	case ATTR_MOTION_LPA_DURATION:
-		return sprintf(buf, "%d\n", st->mot_int.mot_dur);
-	case ATTR_MOTION_LPA_THRESHOLD:
-		return sprintf(buf, "%d\n", st->mot_int.mot_thr);
-
 	case ATTR_SELF_TEST_SAMPLES:
 		return sprintf(buf, "%d\n", st->self_test.samples);
 	case ATTR_SELF_TEST_THRESHOLD:
@@ -1063,14 +1052,7 @@ static IIO_DEVICE_ATTR(step_detector_on, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_dmp_attr_store, ATTR_DMP_STEP_DETECTOR_ON);
 
 /* non DMP sysfs with power on/off */
-static IIO_DEVICE_ATTR(motion_lpa_on, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_attr_store, ATTR_MOTION_LPA_ON);
-static IIO_DEVICE_ATTR(motion_lpa_freq, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_attr_store, ATTR_MOTION_LPA_FREQ);
-static IIO_DEVICE_ATTR(motion_lpa_duration, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_attr_store, ATTR_MOTION_LPA_DURATION);
-static IIO_DEVICE_ATTR(motion_lpa_threshold, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_attr_store, ATTR_MOTION_LPA_THRESHOLD);
+/**/
 
 static IIO_DEVICE_ATTR(in_accel_scale, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_ACCEL_SCALE);
@@ -1264,9 +1246,6 @@ static struct attribute *inv_attributes[] = {
 	&iio_dev_attr_ped_q_on.dev_attr.attr,
 	&iio_dev_attr_ped_q_rate.dev_attr.attr,
 	&iio_dev_attr_step_detector_on.dev_attr.attr,
-	&iio_dev_attr_motion_lpa_on.dev_attr.attr,
-	&iio_dev_attr_motion_lpa_freq.dev_attr.attr,
-	&iio_dev_attr_motion_lpa_threshold.dev_attr.attr,
 	&iio_dev_attr_accel_enable.dev_attr.attr,
 	&iio_dev_attr_accel_fifo_enable.dev_attr.attr,
 	&iio_dev_attr_accel_rate.dev_attr.attr,
