@@ -46,7 +46,7 @@ static const struct inv_mpu6050_reg_map reg_set_6500 = {
 	.gyro_config            = INV_MPU6050_REG_GYRO_CONFIG,
 	.accl_config            = INV_MPU6050_REG_ACCEL_CONFIG,
 	.fifo_count_h           = INV_MPU6050_REG_FIFO_COUNT_H,
-	.fifo_r_w               = INV_MPU6050_REG_FIFO_R_W,
+	.fifo_r_w               = INV_MPU6050_REG_TEMPERATURE0_REG_FIFO_R_W,
 	.raw_gyro               = INV_MPU6050_REG_RAW_GYRO,
 	.raw_accl               = INV_MPU6050_REG_RAW_ACCEL,
 	.temperature            = INV_MPU6050_REG_TEMPERATURE,
@@ -531,7 +531,7 @@ error_write_raw:
  *                  would be alising. This function basically search for the
  *                  correct low pass parameters based on the fifo rate, e.g,
  *                  sampling frequency.
- */
+	 */
 static int inv_mpu6050_set_lpf(struct inv_mpu6050_state *st, int rate)
 {
 	const int hz[] = {188, 98, 42, 20, 10, 5};
@@ -623,28 +623,262 @@ inv_fifo_rate_show(struct device *dev, struct device_attribute *attr,
  *
  * See inv_get_mount_matrix()
  */
-static ssize_t inv_attr_show(struct device *dev, struct device_attribute *attr,
-			     char *buf)
+static ssize_t inv_attr_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
 {
-	struct inv_mpu6050_state *st = iio_priv(dev_to_iio_dev(dev));
+	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct inv_mpu_state *st = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
+	int result, axis;
 	s8 *m;
 
 	switch (this_attr->address) {
-	/*
-	 * In MPU6050, the two matrix are the same because gyro and accel
-	 * are integrated in one chip
-	 */
-	case ATTR_GYRO_MATRIX:
-	case ATTR_ACCL_MATRIX:
-		m = st->plat_data.orientation;
 
-		return sprintf(buf, "%d, %d, %d; %d, %d, %d; %d, %d, %d\n",
+	case ATTR_GYRO_SCALE:
+	{
+		const s16 gyro_scale[] = {250, 500, 1000, 2000};
+
+		return sprintf(buf, "%d\n", gyro_scale[st->chip_config.fsr]);
+	}
+	case ATTR_ACCEL_SCALE:
+	{
+		const s16 accel_scale[] = {2, 4, 8, 16};
+
+		return sprintf(buf, "%d\n",
+					accel_scale[st->chip_config.accel_fs] *
+					st->chip_info.multi);
+	}
+	case ATTR_COMPASS_SCALE:
+		st->slave_compass->get_scale(st, &result);
+
+		return sprintf(buf, "%d\n", result);
+	case ATTR_ACCEL_X_CALIBBIAS:
+	case ATTR_ACCEL_Y_CALIBBIAS:
+	case ATTR_ACCEL_Z_CALIBBIAS:
+		axis = this_attr->address - ATTR_ACCEL_X_CALIBBIAS;
+		return sprintf(buf, "%d\n", st->accel_bias[axis] *
+						st->chip_info.multi);
+	case ATTR_GYRO_X_CALIBBIAS:
+	case ATTR_GYRO_Y_CALIBBIAS:
+	case ATTR_GYRO_Z_CALIBBIAS:
+		axis = this_attr->address - ATTR_GYRO_X_CALIBBIAS;
+		return sprintf(buf, "%d\n", st->gyro_bias[axis]);
+	case ATTR_SELF_TEST_GYRO_SCALE:
+		return sprintf(buf, "%d\n", SELF_TEST_GYRO_FULL_SCALE);
+	case ATTR_SELF_TEST_ACCEL_SCALE:
+		if (INV_MPU6500 == st->chip_type)
+			return sprintf(buf, "%d\n", SELF_TEST_ACCEL_6500_SCALE);
+		else
+			return sprintf(buf, "%d\n", SELF_TEST_ACCEL_FULL_SCALE);
+	case ATTR_GYRO_X_OFFSET:
+	case ATTR_GYRO_Y_OFFSET:
+	case ATTR_GYRO_Z_OFFSET:
+		axis = this_attr->address - ATTR_GYRO_X_OFFSET;
+		return sprintf(buf, "%d\n", st->input_gyro_offset[axis]);
+	case ATTR_ACCEL_X_OFFSET:
+	case ATTR_ACCEL_Y_OFFSET:
+	case ATTR_ACCEL_Z_OFFSET:
+		axis = this_attr->address - ATTR_ACCEL_X_OFFSET;
+		return sprintf(buf, "%d\n", st->input_accel_offset[axis]);
+	case ATTR_DMP_ACCEL_X_DMP_BIAS:
+		return sprintf(buf, "%d\n", st->input_accel_dmp_bias[0]);
+	case ATTR_DMP_ACCEL_Y_DMP_BIAS:
+		return sprintf(buf, "%d\n", st->input_accel_dmp_bias[1]);
+	case ATTR_DMP_ACCEL_Z_DMP_BIAS:
+		return sprintf(buf, "%d\n", st->input_accel_dmp_bias[2]);
+	case ATTR_DMP_GYRO_X_DMP_BIAS:
+		return sprintf(buf, "%d\n", st->input_gyro_dmp_bias[0]);
+	case ATTR_DMP_GYRO_Y_DMP_BIAS:
+		return sprintf(buf, "%d\n", st->input_gyro_dmp_bias[1]);
+	case ATTR_DMP_GYRO_Z_DMP_BIAS:
+		return sprintf(buf, "%d\n", st->input_gyro_dmp_bias[2]);
+	case ATTR_DMP_PED_INT_ON:
+		return sprintf(buf, "%d\n", st->chip_config.ped_int_on);
+	case ATTR_DMP_PED_ON:
+		return sprintf(buf, "%d\n", st->chip_config.ped_on);
+	case ATTR_DMP_SMD_ENABLE:
+		return sprintf(buf, "%d\n", st->chip_config.smd_enable);
+	case ATTR_DMP_SMD_THLD:
+		return sprintf(buf, "%d\n", st->smd.threshold);
+	case ATTR_DMP_SMD_DELAY_THLD:
+		return sprintf(buf, "%d\n", st->smd.delay);
+	case ATTR_DMP_SMD_DELAY_THLD2:
+		return sprintf(buf, "%d\n", st->smd.delay2);
+	case ATTR_DMP_TAP_ON:
+		return sprintf(buf, "%d\n", st->chip_config.tap_on);
+	case ATTR_DMP_TAP_THRESHOLD:
+		return sprintf(buf, "%d\n", st->tap.thresh);
+	case ATTR_DMP_TAP_MIN_COUNT:
+		return sprintf(buf, "%d\n", st->tap.min_count);
+	case ATTR_DMP_TAP_TIME:
+		return sprintf(buf, "%d\n", st->tap.time);
+	case ATTR_DMP_DISPLAY_ORIENTATION_ON:
+		return sprintf(buf, "%d\n",
+			st->chip_config.display_orient_on);
+	case ATTR_DMP_ON:
+		return sprintf(buf, "%d\n", st->chip_config.dmp_on);
+	case ATTR_DMP_INT_ON:
+		return sprintf(buf, "%d\n", st->chip_config.dmp_int_on);
+	case ATTR_DMP_EVENT_INT_ON:
+		return sprintf(buf, "%d\n", st->chip_config.dmp_event_int_on);
+	case ATTR_DMP_STEP_INDICATOR_ON:
+		return sprintf(buf, "%d\n", st->chip_config.step_indicator_on);
+	case ATTR_DMP_BATCHMODE_TIMEOUT:
+		return sprintf(buf, "%d\n",
+				st->batch.timeout);
+	case ATTR_DMP_BATCHMODE_WAKE_FIFO_FULL:
+		return sprintf(buf, "%d\n",
+				st->batch.wake_fifo_on);
+	case ATTR_DMP_SIX_Q_ON:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_SIXQ].on);
+	case ATTR_DMP_SIX_Q_RATE:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_SIXQ].rate);
+	case ATTR_DMP_LPQ_ON:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_LPQ].on);
+	case ATTR_DMP_LPQ_RATE:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_LPQ].rate);
+	case ATTR_DMP_PED_Q_ON:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_PEDQ].on);
+	case ATTR_DMP_PED_Q_RATE:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_PEDQ].rate);
+	case ATTR_DMP_STEP_DETECTOR_ON:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_STEP].on);
+	case ATTR_MOTION_LPA_ON:
+		return sprintf(buf, "%d\n", st->mot_int.mot_on);
+	case ATTR_MOTION_LPA_FREQ:{
+		const char *f[] = {"1.25", "5", "20", "40"};
+		return sprintf(buf, "%s\n", f[st->chip_config.lpa_freq]);
+	}
+	case ATTR_MOTION_LPA_DURATION:
+		return sprintf(buf, "%d\n", st->mot_int.mot_dur);
+	case ATTR_MOTION_LPA_THRESHOLD:
+		return sprintf(buf, "%d\n", st->mot_int.mot_thr);
+
+	case ATTR_SELF_TEST_SAMPLES:
+		return sprintf(buf, "%d\n", st->self_test.samples);
+	case ATTR_SELF_TEST_THRESHOLD:
+		return sprintf(buf, "%d\n", st->self_test.threshold);
+	case ATTR_GYRO_ENABLE:
+		return sprintf(buf, "%d\n", st->chip_config.gyro_enable);
+	case ATTR_GYRO_FIFO_ENABLE:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_GYRO].on);
+	case ATTR_GYRO_RATE:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_GYRO].rate);
+	case ATTR_ACCEL_ENABLE:
+		return sprintf(buf, "%d\n", st->chip_config.accel_enable);
+	case ATTR_ACCEL_FIFO_ENABLE:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_ACCEL].on);
+	case ATTR_ACCEL_RATE:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_ACCEL].rate);
+	case ATTR_COMPASS_ENABLE:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_COMPASS].on);
+	case ATTR_COMPASS_RATE:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_COMPASS].rate);
+	case ATTR_PRESSURE_ENABLE:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_PRESSURE].on);
+	case ATTR_PRESSURE_RATE:
+		return sprintf(buf, "%d\n", st->sensor[SENSOR_PRESSURE].rate);
+	case ATTR_POWER_STATE:
+		return sprintf(buf, "%d\n", !fake_asleep);
+	case ATTR_FIRMWARE_LOADED:
+		return sprintf(buf, "%d\n", st->chip_config.firmware_loaded);
+	case ATTR_SAMPLING_FREQ:
+		return sprintf(buf, "%d\n", st->chip_config.new_fifo_rate);
+	case ATTR_SELF_TEST:
+		mutex_lock(&indio_dev->mlock);
+		if (st->chip_config.enable) {
+			mutex_unlock(&indio_dev->mlock);
+			return -EBUSY;
+		}
+		if (INV_MPU3050 == st->chip_type)
+			result = 1;
+		else
+			result = inv_hw_self_test(st);
+		mutex_unlock(&indio_dev->mlock);
+		return sprintf(buf, "%d\n", result);
+	case ATTR_GYRO_MATRIX:
+		m = st->plat_data.orientation;
+		return sprintf(buf, "%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
 			m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+	case ATTR_ACCEL_MATRIX:
+		if (st->plat_data.sec_slave_type ==
+						SECONDARY_SLAVE_TYPE_ACCEL)
+			m =
+			st->plat_data.secondary_orientation;
+		else
+			m = st->plat_data.orientation;
+		return sprintf(buf, "%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+			m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+	case ATTR_COMPASS_MATRIX:
+		if (st->plat_data.sec_slave_type ==
+				SECONDARY_SLAVE_TYPE_COMPASS)
+			m =
+			st->plat_data.secondary_orientation;
+		else
+			return -ENODEV;
+		return sprintf(buf, "%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+			m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+	case ATTR_SECONDARY_NAME:
+	{
+		const char *n[] = {"NULL", "AK8975", "AK8972", "AK8963",
+					"BMA250", "MLX90399"};
+		switch (st->plat_data.sec_slave_id) {
+		case COMPASS_ID_AK8975:
+			return sprintf(buf, "%s\n", n[1]);
+		case COMPASS_ID_AK8972:
+			return sprintf(buf, "%s\n", n[2]);
+		case COMPASS_ID_AK8963:
+			return sprintf(buf, "%s\n", n[3]);
+		case ACCEL_ID_BMA250:
+			return sprintf(buf, "%s\n", n[4]);
+		case COMPASS_ID_MLX90399:
+			return sprintf(buf, "%s\n", n[5]);
+		default:
+			return sprintf(buf, "%s\n", n[0]);
+		}
+	}
+#ifdef CONFIG_INV_TESTING
+	case ATTR_REG_WRITE:
+		return sprintf(buf, "1\n");
+	case ATTR_COMPASS_SENS:
+	{
+		/* these 2 conditions should never be met, since the
+		   'compass_sens' sysfs entry should be hidden if the compass
+		   is not an AKM */
+		if (st->plat_data.sec_slave_type !=
+					SECONDARY_SLAVE_TYPE_COMPASS)
+			return -ENODEV;
+		if (st->plat_data.sec_slave_id != COMPASS_ID_AK8975 &&
+		    st->plat_data.sec_slave_id != COMPASS_ID_AK8972 &&
+		    st->plat_data.sec_slave_id != COMPASS_ID_AK8963)
+			return -ENODEV;
+		m = st->chip_info.compass_sens;
+		return sprintf(buf, "%d,%d,%d\n", m[0], m[1], m[2]);
+	}
+	case ATTR_DEBUG_SMD_EXE_STATE:
+	{
+		u8 d[2];
+
+		result = st->set_power_state(st, true);
+		mpu_memory_read(st, st->i2c_addr,
+				inv_dmp_get_address(KEY_SMD_EXE_STATE), 2, d);
+		return sprintf(buf, "%d\n", (short)be16_to_cpup((__be16 *)(d)));
+	}
+	case ATTR_DEBUG_SMD_DELAY_CNTR:
+	{
+		u8 d[4];
+
+		result = st->set_power_state(st, true);
+		mpu_memory_read(st, st->i2c_addr,
+				inv_dmp_get_address(KEY_SMD_DELAY_CNTR), 4, d);
+		return sprintf(buf, "%d\n", (int)be32_to_cpup((__be32 *)(d)));
+	}
+#endif
 	default:
-		return -EINVAL;
+		return -EPERM;
 	}
 }
+
 
 /**
  * inv_mpu6050_validate_trigger() - validate_trigger callback for invensense
@@ -733,6 +967,10 @@ static IIO_DEVICE_ATTR(in_gyro_matrix, S_IRUGO, inv_attr_show, NULL,
 	ATTR_GYRO_MATRIX);
 static IIO_DEVICE_ATTR(in_accel_matrix, S_IRUGO, inv_attr_show, NULL,
 	ATTR_ACCL_MATRIX);
+
+/* New sysfs entries from android driver. */
+static IIO_DEVICE_ATTR(gyro_enable, S_IRUGO | S_IWUSR, inv_attr_show,
+	inv_attr_store, ATTR_GYRO_ENABLE);
 
 static struct attribute *inv_attributes[] = {
 	&iio_dev_attr_in_gyro_matrix.dev_attr.attr,  /* deprecated */
