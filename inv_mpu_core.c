@@ -615,6 +615,332 @@ inv_fifo_rate_show(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, "%d\n", st->chip_config.fifo_rate);
 }
 
+
+/**
+**DMP
+**/
+
+static ssize_t _dmp_bias_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct inv_mpu_state *st = iio_priv(indio_dev);
+	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
+	int result, data, tmp;
+
+	if (!st->chip_config.firmware_loaded)
+		return -EINVAL;
+
+	if (!st->chip_config.enable) {
+		result = st->set_power_state(st, true);
+		if (result)
+			return result;
+	}
+
+	result = kstrtoint(buf, 10, &data);
+	if (result)
+		goto dmp_bias_store_fail;
+	switch (this_attr->address) {
+	case ATTR_DMP_ACCEL_X_DMP_BIAS:
+		tmp = st->input_accel_dmp_bias[0];
+		st->input_accel_dmp_bias[0] = data;
+		result = inv_set_accel_bias_dmp(st);
+		if (result)
+			st->input_accel_dmp_bias[0] = tmp;
+		break;
+	case ATTR_DMP_ACCEL_Y_DMP_BIAS:
+		tmp = st->input_accel_dmp_bias[1];
+		st->input_accel_dmp_bias[1] = data;
+		result = inv_set_accel_bias_dmp(st);
+		if (result)
+			st->input_accel_dmp_bias[1] = tmp;
+		break;
+	case ATTR_DMP_ACCEL_Z_DMP_BIAS:
+		tmp = st->input_accel_dmp_bias[2];
+		st->input_accel_dmp_bias[2] = data;
+		result = inv_set_accel_bias_dmp(st);
+		if (result)
+			st->input_accel_dmp_bias[2] = tmp;
+		break;
+	case ATTR_DMP_GYRO_X_DMP_BIAS:
+		result = write_be32_key_to_mem(st, data,
+					KEY_CFG_EXT_GYRO_BIAS_X);
+		if (result)
+			goto dmp_bias_store_fail;
+		st->input_gyro_dmp_bias[0] = data;
+		break;
+	case ATTR_DMP_GYRO_Y_DMP_BIAS:
+		result = write_be32_key_to_mem(st, data,
+					KEY_CFG_EXT_GYRO_BIAS_Y);
+		if (result)
+			goto dmp_bias_store_fail;
+		st->input_gyro_dmp_bias[1] = data;
+		break;
+	case ATTR_DMP_GYRO_Z_DMP_BIAS:
+		result = write_be32_key_to_mem(st, data,
+					KEY_CFG_EXT_GYRO_BIAS_Z);
+		if (result)
+			goto dmp_bias_store_fail;
+		st->input_gyro_dmp_bias[2] = data;
+		break;
+	default:
+		break;
+	}
+
+dmp_bias_store_fail:
+	if (!st->chip_config.enable)
+		result |= st->set_power_state(st, false);
+	if (result)
+		return result;
+
+	return count;
+}
+
+static ssize_t inv_dmp_bias_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	int result;
+
+	mutex_lock(&indio_dev->mlock);
+	result = _dmp_bias_store(dev, attr, buf, count);
+	mutex_unlock(&indio_dev->mlock);
+
+	return result;
+}
+
+static ssize_t _dmp_attr_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct inv_mpu_state *st = iio_priv(indio_dev);
+	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
+	int result, data;
+
+	if (st->chip_config.enable)
+		return -EBUSY;
+	if (this_attr->address <= ATTR_DMP_DISPLAY_ORIENTATION_ON) {
+		if (!st->chip_config.firmware_loaded)
+			return -EINVAL;
+		result = st->set_power_state(st, true);
+		if (result)
+			return result;
+	}
+
+	result = kstrtoint(buf, 10, &data);
+	if (result)
+		goto dmp_attr_store_fail;
+	switch (this_attr->address) {
+	case ATTR_DMP_PED_INT_ON:
+		result = inv_enable_pedometer_interrupt(st, !!data);
+		if (result)
+			goto dmp_attr_store_fail;
+		st->chip_config.ped_int_on = !!data;
+		break;
+	case ATTR_DMP_PED_ON:
+	{
+		result = inv_enable_pedometer(st, !!data);
+		if (result)
+			goto dmp_attr_store_fail;
+		st->chip_config.ped_on = !!data;
+		break;
+	}
+	case ATTR_DMP_SMD_ENABLE:
+		result = inv_write_2bytes(st, KEY_SMD_ENABLE, !!data);
+		if (result)
+			goto dmp_attr_store_fail;
+		st->chip_config.smd_enable = !!data;
+		break;
+	case ATTR_DMP_SMD_THLD:
+		if (data < 0 || data > SHRT_MAX)
+			goto dmp_attr_store_fail;
+		result = write_be32_key_to_mem(st, data << 16,
+						KEY_SMD_ACCEL_THLD);
+		if (result)
+			goto dmp_attr_store_fail;
+		st->smd.threshold = data;
+		break;
+	case ATTR_DMP_SMD_DELAY_THLD:
+		if (data < 0 || data > INT_MAX / MPU_DEFAULT_DMP_FREQ)
+			goto dmp_attr_store_fail;
+		result = write_be32_key_to_mem(st, data * MPU_DEFAULT_DMP_FREQ,
+						KEY_SMD_DELAY_THLD);
+		if (result)
+			goto dmp_attr_store_fail;
+		st->smd.delay = data;
+		break;
+	case ATTR_DMP_SMD_DELAY_THLD2:
+		if (data < 0 || data > INT_MAX / MPU_DEFAULT_DMP_FREQ)
+			goto dmp_attr_store_fail;
+		result = write_be32_key_to_mem(st, data * MPU_DEFAULT_DMP_FREQ,
+						KEY_SMD_DELAY2_THLD);
+		if (result)
+			goto dmp_attr_store_fail;
+		st->smd.delay2 = data;
+		break;
+	case ATTR_DMP_TAP_ON:
+		result = inv_enable_tap_dmp(st, !!data);
+		if (result)
+			goto dmp_attr_store_fail;
+		st->chip_config.tap_on = !!data;
+		break;
+	case ATTR_DMP_TAP_THRESHOLD:
+		if (data < 0 || data > USHRT_MAX) {
+			result = -EINVAL;
+			goto dmp_attr_store_fail;
+		}
+		result = inv_set_tap_threshold_dmp(st, data);
+		if (result)
+			goto dmp_attr_store_fail;
+		st->tap.thresh = data;
+		break;
+	case ATTR_DMP_TAP_MIN_COUNT:
+		if (data < 0 || data > USHRT_MAX) {
+			result = -EINVAL;
+			goto dmp_attr_store_fail;
+		}
+		result = inv_set_min_taps_dmp(st, data);
+		if (result)
+			goto dmp_attr_store_fail;
+		st->tap.min_count = data;
+		break;
+	case ATTR_DMP_TAP_TIME:
+		if (data < 0 || data > USHRT_MAX) {
+			result = -EINVAL;
+			goto dmp_attr_store_fail;
+		}
+		result = inv_set_tap_time_dmp(st, data);
+		if (result)
+			goto dmp_attr_store_fail;
+		st->tap.time = data;
+		break;
+	case ATTR_DMP_DISPLAY_ORIENTATION_ON:
+		result = inv_set_display_orient_interrupt_dmp(st, !!data);
+		if (result)
+			goto dmp_attr_store_fail;
+		st->chip_config.display_orient_on = !!data;
+		break;
+	/* from here, power of chip is not turned on */
+	case ATTR_DMP_ON:
+		st->chip_config.dmp_on = !!data;
+		break;
+	case ATTR_DMP_INT_ON:
+		st->chip_config.dmp_int_on = !!data;
+		break;
+	case ATTR_DMP_EVENT_INT_ON:
+		st->chip_config.dmp_event_int_on = !!data;
+		break;
+	case ATTR_DMP_STEP_INDICATOR_ON:
+		st->chip_config.step_indicator_on = !!data;
+		break;
+	case ATTR_DMP_BATCHMODE_TIMEOUT:
+		if (data < 0 || data > INT_MAX) {
+			result = -EINVAL;
+			goto dmp_attr_store_fail;
+		}
+		st->batch.timeout = data;
+		break;
+	case ATTR_DMP_BATCHMODE_WAKE_FIFO_FULL:
+		st->batch.wake_fifo_on = !!data;
+		st->batch.overflow_on = 0;
+		break;
+	case ATTR_DMP_SIX_Q_ON:
+		st->sensor[SENSOR_SIXQ].on = !!data;
+		break;
+	case ATTR_DMP_SIX_Q_RATE:
+		if (data > MPU_DEFAULT_DMP_FREQ || data < 0) {
+			result = -EINVAL;
+			goto dmp_attr_store_fail;
+		}
+		st->sensor[SENSOR_SIXQ].rate = data;
+		st->sensor[SENSOR_SIXQ].dur = MPU_DEFAULT_DMP_FREQ / data;
+		st->sensor[SENSOR_SIXQ].dur *= DMP_INTERVAL_INIT;
+		break;
+	case ATTR_DMP_LPQ_ON:
+		st->sensor[SENSOR_LPQ].on = !!data;
+		break;
+	case ATTR_DMP_LPQ_RATE:
+		if (data > MPU_DEFAULT_DMP_FREQ || data < 0) {
+			result = -EINVAL;
+			goto dmp_attr_store_fail;
+		}
+		st->sensor[SENSOR_LPQ].rate = data;
+		st->sensor[SENSOR_LPQ].dur = MPU_DEFAULT_DMP_FREQ / data;
+		st->sensor[SENSOR_LPQ].dur *= DMP_INTERVAL_INIT;
+		break;
+	case ATTR_DMP_PED_Q_ON:
+		st->sensor[SENSOR_PEDQ].on = !!data;
+		break;
+	case ATTR_DMP_PED_Q_RATE:
+		if (data > MPU_DEFAULT_DMP_FREQ || data < 0) {
+			result = -EINVAL;
+			goto dmp_attr_store_fail;
+		}
+		st->sensor[SENSOR_PEDQ].rate = data;
+		st->sensor[SENSOR_PEDQ].dur = MPU_DEFAULT_DMP_FREQ / data;
+		st->sensor[SENSOR_PEDQ].dur *= DMP_INTERVAL_INIT;
+		break;
+	case ATTR_DMP_STEP_DETECTOR_ON:
+		st->sensor[SENSOR_STEP].on = !!data;
+		break;
+#ifdef CONFIG_INV_TESTING
+	case ATTR_DEBUG_SMD_ENABLE_TESTP1:
+	{
+		u8 d[] = {0x42};
+		result = st->set_power_state(st, true);
+		if (result)
+			goto dmp_attr_store_fail;
+		result = mem_w_key(KEY_SMD_ENABLE_TESTPT1, ARRAY_SIZE(d), d);
+		if (result)
+			goto dmp_attr_store_fail;
+	}
+		break;
+	case ATTR_DEBUG_SMD_ENABLE_TESTP2:
+	{
+		u8 d[] = {0x42};
+		result = st->set_power_state(st, true);
+		if (result)
+			goto dmp_attr_store_fail;
+		result = mem_w_key(KEY_SMD_ENABLE_TESTPT2, ARRAY_SIZE(d), d);
+		if (result)
+			goto dmp_attr_store_fail;
+	}
+		break;
+#endif
+	default:
+		result = -EINVAL;
+		goto dmp_attr_store_fail;
+	}
+
+dmp_attr_store_fail:
+	if (this_attr->address <= ATTR_DMP_DISPLAY_ORIENTATION_ON)
+		result |= st->set_power_state(st, false);
+	if (result)
+		return result;
+
+	return count;
+}
+
+/*
+ * inv_dmp_attr_store() -  calling this function will store current
+ *                        dmp parameter settings
+ */
+static ssize_t inv_dmp_attr_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+
+	int result;
+
+	mutex_lock(&indio_dev->mlock);
+	result = _dmp_attr_store(dev, attr, buf, count);
+	mutex_unlock(&indio_dev->mlock);
+
+	return result;
+}
+
+
+
 /**
  * inv_attr_show() - calling this function will show current
  *                    parameters.
