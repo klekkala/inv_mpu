@@ -731,20 +731,6 @@ static ssize_t _dmp_attr_store(struct device *dev,
 	if (result)
 		goto dmp_attr_store_fail;
 	switch (this_attr->address) {
-	case ATTR_DMP_PED_INT_ON:
-		result = inv_enable_pedometer_interrupt(st, !!data);
-		if (result)
-			goto dmp_attr_store_fail;
-		st->chip_config.ped_int_on = !!data;
-		break;
-	case ATTR_DMP_PED_ON:
-	{
-		result = inv_enable_pedometer(st, !!data);
-		if (result)
-			goto dmp_attr_store_fail;
-		st->chip_config.ped_on = !!data;
-		break;
-	}
 	case ATTR_DMP_SMD_ENABLE:
 		result = inv_write_2bytes(st, KEY_SMD_ENABLE, !!data);
 		if (result)
@@ -867,18 +853,6 @@ static ssize_t _dmp_attr_store(struct device *dev,
 		st->sensor[SENSOR_LPQ].rate = data;
 		st->sensor[SENSOR_LPQ].dur = MPU_DEFAULT_DMP_FREQ / data;
 		st->sensor[SENSOR_LPQ].dur *= DMP_INTERVAL_INIT;
-		break;
-	case ATTR_DMP_PED_Q_ON:
-		st->sensor[SENSOR_PEDQ].on = !!data;
-		break;
-	case ATTR_DMP_PED_Q_RATE:
-		if (data > MPU_DEFAULT_DMP_FREQ || data < 0) {
-			result = -EINVAL;
-			goto dmp_attr_store_fail;
-		}
-		st->sensor[SENSOR_PEDQ].rate = data;
-		st->sensor[SENSOR_PEDQ].dur = MPU_DEFAULT_DMP_FREQ / data;
-		st->sensor[SENSOR_PEDQ].dur *= DMP_INTERVAL_INIT;
 		break;
 	case ATTR_DMP_STEP_DETECTOR_ON:
 		st->sensor[SENSOR_STEP].on = !!data;
@@ -1018,10 +992,6 @@ static ssize_t inv_attr_show(struct device *dev,
 		return sprintf(buf, "%d\n", st->input_gyro_dmp_bias[1]);
 	case ATTR_DMP_GYRO_Z_DMP_BIAS:
 		return sprintf(buf, "%d\n", st->input_gyro_dmp_bias[2]);
-	case ATTR_DMP_PED_INT_ON:
-		return sprintf(buf, "%d\n", st->chip_config.ped_int_on);
-	case ATTR_DMP_PED_ON:
-		return sprintf(buf, "%d\n", st->chip_config.ped_on);
 	case ATTR_DMP_SMD_ENABLE:
 		return sprintf(buf, "%d\n", st->chip_config.smd_enable);
 	case ATTR_DMP_SMD_THLD:
@@ -1063,10 +1033,6 @@ static ssize_t inv_attr_show(struct device *dev,
 		return sprintf(buf, "%d\n", st->sensor[SENSOR_LPQ].on);
 	case ATTR_DMP_LPQ_RATE:
 		return sprintf(buf, "%d\n", st->sensor[SENSOR_LPQ].rate);
-	case ATTR_DMP_PED_Q_ON:
-		return sprintf(buf, "%d\n", st->sensor[SENSOR_PEDQ].on);
-	case ATTR_DMP_PED_Q_RATE:
-		return sprintf(buf, "%d\n", st->sensor[SENSOR_PEDQ].rate);
 	case ATTR_DMP_STEP_DETECTOR_ON:
 		return sprintf(buf, "%d\n", st->sensor[SENSOR_STEP].on);
 	case ATTR_SELF_TEST_SAMPLES:
@@ -1211,12 +1177,6 @@ static ssize_t _attr_store(struct device *dev,
 
 	/* check the input and validate it's format */
 	switch (this_attr->address) {
-#ifdef CONFIG_INV_TESTING
-	/* these inputs are strings */
-	case ATTR_COMPASS_MATRIX:
-	case ATTR_COMPASS_SENS:
-		break;
-#endif
 	/* these inputs are integers */
 	default:
 		result = kstrtoint(buf, 10, &data);
@@ -1322,21 +1282,6 @@ static ssize_t _attr_store(struct device *dev,
 		st->sensor[SENSOR_COMPASS].rate = data;
 		st->sensor[SENSOR_COMPASS].dur  = MPU_DEFAULT_DMP_FREQ / data;
 		st->sensor[SENSOR_COMPASS].dur  *= DMP_INTERVAL_INIT;
-		break;
-	case ATTR_PRESSURE_ENABLE:
-		st->sensor[SENSOR_PRESSURE].on = !!data;
-		break;
-	case ATTR_PRESSURE_RATE:
-		if (data <= 0) {
-			result = -EINVAL;
-			goto attr_store_fail;
-		}
-		if ((MSEC_PER_SEC / st->slave_pressure->rate_scale) < data)
-			data = MSEC_PER_SEC / st->slave_pressure->rate_scale;
-
-		st->sensor[SENSOR_PRESSURE].rate = data;
-		st->sensor[SENSOR_PRESSURE].dur  = MPU_DEFAULT_DMP_FREQ / data;
-		st->sensor[SENSOR_PRESSURE].dur  *= DMP_INTERVAL_INIT;
 		break;
 	case ATTR_POWER_STATE:
 		fake_asleep = !data;
@@ -1613,10 +1558,6 @@ static IIO_DEVICE_ATTR(three_axes_q_on, S_IRUGO | S_IWUSR, inv_attr_show,
 static IIO_DEVICE_ATTR(three_axes_q_rate, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_dmp_attr_store, ATTR_DMP_LPQ_RATE);
 
-static IIO_DEVICE_ATTR(ped_q_on, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_dmp_attr_store, ATTR_DMP_PED_Q_ON);
-static IIO_DEVICE_ATTR(ped_q_rate, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_dmp_attr_store, ATTR_DMP_PED_Q_RATE);
 
 static IIO_DEVICE_ATTR(step_detector_on, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_dmp_attr_store, ATTR_DMP_STEP_DETECTOR_ON);
@@ -1767,8 +1708,6 @@ static struct attribute *inv_attributes[] = {
 	&iio_dev_attr_six_axes_q_rate.dev_attr.attr,
 	&iio_dev_attr_three_axes_q_on.dev_attr.attr,
 	&iio_dev_attr_three_axes_q_rate.dev_attr.attr,
-	&iio_dev_attr_ped_q_on.dev_attr.attr,
-	&iio_dev_attr_ped_q_rate.dev_attr.attr,
 	&iio_dev_attr_step_detector_on.dev_attr.attr,
 	&iio_dev_attr_accel_enable.dev_attr.attr,
 	&iio_dev_attr_accel_fifo_enable.dev_attr.attr,
