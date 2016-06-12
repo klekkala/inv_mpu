@@ -763,10 +763,6 @@ static ssize_t inv_attr_show(struct device *dev,
 		return sprintf(buf, "%d\n", st->sensor[SENSOR_COMPASS].on);
 	case ATTR_COMPASS_RATE:
 		return sprintf(buf, "%d\n", st->sensor[SENSOR_COMPASS].rate);
-	case ATTR_PRESSURE_ENABLE:
-		return sprintf(buf, "%d\n", st->sensor[SENSOR_PRESSURE].on);
-	case ATTR_PRESSURE_RATE:
-		return sprintf(buf, "%d\n", st->sensor[SENSOR_PRESSURE].rate);
 	case ATTR_POWER_STATE:
 		return sprintf(buf, "%d\n", !fake_asleep);
 	case ATTR_FIRMWARE_LOADED:
@@ -1099,11 +1095,6 @@ static IIO_DEVICE_ATTR(compass_enable, S_IRUGO | S_IWUSR, inv_attr_show,
 static IIO_DEVICE_ATTR(compass_rate, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_COMPASS_RATE);
 
-static IIO_DEVICE_ATTR(pressure_enable, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_attr_store, ATTR_PRESSURE_ENABLE);
-static IIO_DEVICE_ATTR(pressure_rate, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_attr_store, ATTR_PRESSURE_RATE);
-
 static IIO_DEVICE_ATTR(power_state, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_POWER_STATE);
 static IIO_DEVICE_ATTR(firmware_loaded, S_IRUGO | S_IWUSR, inv_attr_show,
@@ -1172,8 +1163,6 @@ static IIO_DEVICE_ATTR(test_accel_counter, S_IRUGO | S_IWUSR, inv_test_show,
 	inv_test_store, ATTR_DEBUG_ACCEL_COUNTER);
 static IIO_DEVICE_ATTR(test_compass_counter, S_IRUGO | S_IWUSR, inv_test_show,
 	inv_test_store, ATTR_DEBUG_COMPASS_COUNTER);
-static IIO_DEVICE_ATTR(test_pressure_counter, S_IRUGO | S_IWUSR, inv_test_show,
-	inv_test_store, ATTR_DEBUG_PRESSURE_COUNTER);
 static IIO_DEVICE_ATTR(test_LPQ_counter, S_IRUGO | S_IWUSR, inv_test_show,
 	inv_test_store, ATTR_DEBUG_LPQ_COUNTER);
 static IIO_DEVICE_ATTR(test_SIXQ_counter, S_IRUGO | S_IWUSR, inv_test_show,
