@@ -377,3 +377,5 @@ int inv_mpu_core_remove(struct device *dev);
 int inv_mpu6050_set_power_itg(struct inv_mpu6050_state *st, bool power_on);
 extern const struct dev_pm_ops inv_mpu_pmops;
 int inv_mpu_setup_compass_slave(struct inv_mpu_state *st);
+
+
