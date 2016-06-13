@@ -24,6 +24,16 @@
 #include <linux/iio/trigger_consumer.h>
 #include <linux/platform_data/invensense_mpu6050.h>
 #include "dmpKey.h"
+
+
+#define MAX_BYTES_PER_SAMPLE     80
+#define MAX_HW_FIFO_BYTES        (BYTES_PER_SENSOR * 2)
+#define IIO_BUFFER_BYTES         8
+#define HEADERED_NORMAL_BYTES    8
+#define HEADERED_Q_BYTES         16
+
+
+
 /**
  *  struct inv_mpu6050_reg_map - Notable registers.
  *  @sample_rate_div:	Divider applied to gyro output rate.
@@ -95,9 +105,80 @@ struct inv_mpu6050_chip_config {
 	unsigned int dmp_event_int_on:1;
 	unsigned int accl_fifo_enable:1;
 	unsigned int gyro_fifo_enable:1;
-	unsigned int magn_fifo_enable:1;
-	u16 fifo_rate;
+	unsigned int has_footer:1;
+	unsigned int accel_enable:1;
+	unsigned int gyro_enable:1;
+	unsigned int is_asleep:1;
+	unsigned int step_indicator_on:1;
+	unsigned int firmware_loaded:1;
+	unsigned int tap_on:1;
+	unsigned int display_orient_on:1;
+	unsigned int normal_compass_measure:1;
+	unsigned int normal_pressure_measure:1;
+	unsigned int smd_enable:1;
+	unsigned int adjust_time:1;
+	unsigned int smd_triggered:1;
+	unsigned int lpa_freq;
+	unsigned int prog_start_addr;
+	unsigned int fifo_rate;
+	unsigned int new_fifo_rate;
+	unsigned int bytes_per_datum;
 };
+
+/**
+ *  struct inv_chip_info_s - Chip related information.
+ *  @product_id:	Product id.
+ *  @product_revision:	Product revision.
+ *  @silicon_revision:	Silicon revision.
+ *  @software_revision:	software revision.
+ *  @multi:		accel specific multiplier.
+ *  @compass_sens:	compass sensitivity.
+ *  @gyro_sens_trim:	Gyro sensitivity trim factor.
+ *  @accel_sens_trim:    accel sensitivity trim factor.
+ */
+struct inv_chip_info_s {
+	u8 product_id;
+	u8 product_revision;
+	u8 silicon_revision;
+	u8 software_revision;
+	u8 multi;
+	u8 compass_sens[3];
+	u32 gyro_sens_trim;
+	u32 accel_sens_trim;
+};
+
+/**
+ *  struct inv_tap structure to store tap data.
+ *  @min_count:  minimum taps counted.
+ *  @thresh:    tap threshold.
+ *  @time:	tap time.
+ */
+struct inv_tap {
+	u16 min_count;
+	u16 thresh;
+	u16 time;
+};
+
+/**
+ *  struct accel_mot_int_s structure to store motion interrupt data
+ *  @mot_thr:    motion threshold.
+ *  @mot_dur:    motion duration.
+ *  @mot_on:     flag to indicate motion detection on;
+ */
+struct accel_mot_int {
+	u16 mot_thr;
+	u32 mot_dur;
+	u8 mot_on:1;
+};
+
+/**
+ * struct self_test_setting - self test settables from sysfs
+ * samples: number of samples used in self test.
+ * threshold: threshold fail/pass criterion in self test.
+ *            This value is in the percentage multiplied by 100.
+ *            So 14% would be 14.
+ */
+
 
 /**
  *  struct inv_mpu6050_hw - Other important hardware information.
@@ -144,7 +225,58 @@ struct inv_mpu6050_state {
 	DECLARE_KFIFO(timestamps, long long, TIMESTAMP_FIFO_SIZE);
 	struct regmap *map;
 	int irq;
+
+	struct inv_chip_info_s chip_info;
+	struct inv_tap   tap;
+	const struct inv_hw_s *hw;
+	enum   inv_devices chip_type;
+	spinlock_t time_stamp_lock;
+	struct inv_mpu_slave *slave_accel;
+	struct inv_mpu_slave *slave_compass;
+	struct inv_mpu_slave *slave_pressure;
+	struct accel_mot_int mot_int;
+	int (*set_power_state)(struct inv_mpu_state *, bool on);
+	int (*switch_gyro_engine)(struct inv_mpu_state *, bool on);
+	int (*switch_accel_engine)(struct inv_mpu_state *, bool on);
+	int (*init_config)(struct iio_dev *indio_dev);
+	void (*setup_reg)(struct inv_reg_map_s *reg);
+	DECLARE_KFIFO(timestamps, u64, TIMESTAMP_FIFO_SIZE);
+	int accel_bias[3];
+	int gyro_bias[3];
+	s16 input_gyro_offset[3];
+	s16 input_accel_offset[3];
+	int input_accel_dmp_bias[3];
+	int input_gyro_dmp_bias[3];
+	s16 rom_gyro_offset[3];
+	s16 rom_accel_offset[3];
+	u8 fifo_data[6];
+	u8 i2c_addr;
+	u8 sample_divider;
+	u8 fifo_divider;
+	u8 display_orient_data;
+	u8 tap_data;
+	u16 bytes_per_sec;
+	u8 left_over[HEADERED_Q_BYTES];
+	u32 left_over_size;
+	struct inv_sensor sensor[SENSOR_NUM_MAX];
+	u32 fifo_count;
+	u32 dmp_counter;
+	u32 dmp_ticks;
+	void *sl_handle;
+	u32 irq_dur_ns;
+	u32 ts_counter;
+	u32 dmp_interval;
+	s32 dmp_interval_accum;
+	s64 diff_accumulater;
+	u64 last_ts;
+	u64 step_detector_base_ts;
+	u64 prev_ts;
+	u64 last_run_time;
+	struct delayed_work work;
+	u8 name[20];
+	u8 secondary_name[20];
 };
+
 
 /*register and associated bit definition*/
 #define INV_MPU6050_REG_ACCEL_OFFSET        0x06
@@ -221,6 +353,8 @@ struct inv_mpu6050_state {
 
 /* init parameters */
 #define INV_MPU6050_INIT_FIFO_RATE           50
+#define INIT_DMP_OUTPUT_RATE     25
+#define INIT_DUR_TIME           (NSEC_PER_SEC / INIT_FIFO_RATE)
 #define INV_MPU6050_TIME_STAMP_TOR           5
 #define INV_MPU6050_MAX_FIFO_RATE            1000
 #define INV_MPU6050_MIN_FIFO_RATE            4
@@ -233,6 +367,35 @@ struct inv_mpu6050_state {
 #define INV_MPU6500_WHOAMI_VALUE		0x70
 #define INV_MPU9150_WHOAMI_VALUE		0x68
 #define INV_MPU9250_WHOAMI_VALUE		0x70
+
+
+#define MPU_MAX_A_OFFSET_VALUE     16383
+#define MPU_MIN_A_OFFSET_VALUE     -16384
+#define MPU_MAX_G_OFFSET_VALUE     32767
+#define MPU_MIN_G_OFFSET_VALUE     -32767
+
+/* Macros added from android driver*/
+#define MPU_DEFAULT_DMP_FREQ     200
+#define DMP_INTERVAL_INIT       (5 * NSEC_PER_MSEC)
+#define DMP_INTERVAL_MIN_ADJ    (50 * NSEC_PER_USEC)
+#define SELF_TEST_GYRO_FULL_SCALE 250
+#define SELF_TEST_ACCEL_FULL_SCALE 8
+#define SELF_TEST_ACCEL_6500_SCALE 2
+
+
+/* enum for sensor added from android driver*/
+enum INV_SENSORS {
+	SENSOR_GYRO = 0,
+	SENSOR_ACCEL,
+	SENSOR_COMPASS,
+	SENSOR_PRESSURE,
+	SENSOR_STEP,
+	SENSOR_PEDQ,
+	SENSOR_SIXQ,
+	SENSOR_LPQ,
+	SENSOR_NUM_MAX,
+	SENSOR_INVALID,
+};
 
 /* scan element definition */
 enum inv_mpu6050_scan {
@@ -369,6 +532,15 @@ int inv_reset_fifo(struct iio_dev *indio_dev);
 int inv_mpu6050_switch_engine(struct inv_mpu6050_state *st, bool en, u32 mask);
 int inv_mpu6050_write_reg(struct inv_mpu6050_state *st, int reg, u8 val);
 int inv_mpu6050_set_power_itg(struct inv_mpu6050_state *st, bool power_on);
+int write_be32_key_to_mem(struct inv_mpu_state *st,
+					u32 data, int key);
+int inv_set_accel_bias_dmp(struct inv_mpu_state *st);
+int inv_write_2bytes(struct inv_mpu_state *st, int k, int data);
+int inv_set_display_orient_interrupt_dmp(struct inv_mpu_state *st, bool on);
+int inv_set_min_taps_dmp(struct inv_mpu_state *st, u16 min_taps);
+int inv_set_tap_threshold_dmp(struct inv_mpu_state *st, u16 threshold);
+int inv_set_tap_time_dmp(struct inv_mpu_state *st, u16 time);
+int inv_enable_tap_dmp(struct inv_mpu_state *st, bool on);
 int inv_mpu_acpi_create_mux_client(struct i2c_client *client);
 void inv_mpu_acpi_delete_mux_client(struct i2c_client *client);
 int inv_mpu_core_probe(struct regmap *regmap, int irq, const char *name,
@@ -377,5 +549,3 @@ int inv_mpu_core_remove(struct device *dev);
 int inv_mpu6050_set_power_itg(struct inv_mpu6050_state *st, bool power_on);
 extern const struct dev_pm_ops inv_mpu_pmops;
 int inv_mpu_setup_compass_slave(struct inv_mpu_state *st);
-
-

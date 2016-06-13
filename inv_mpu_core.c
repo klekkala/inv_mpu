@@ -46,7 +46,7 @@ static const struct inv_mpu6050_reg_map reg_set_6500 = {
 	.gyro_config            = INV_MPU6050_REG_GYRO_CONFIG,
 	.accl_config            = INV_MPU6050_REG_ACCEL_CONFIG,
 	.fifo_count_h           = INV_MPU6050_REG_FIFO_COUNT_H,
-	.fifo_r_w               = INV_MPU6050_REG_TEMPERATURE0_REG_FIFO_R_W,
+	.fifo_r_w               = INV_MPU6050_REG_TEMPERATURE,
 	.raw_gyro               = INV_MPU6050_REG_RAW_GYRO,
 	.raw_accl               = INV_MPU6050_REG_RAW_ACCEL,
 	.temperature            = INV_MPU6050_REG_TEMPERATURE,
@@ -120,6 +120,8 @@ static const struct inv_mpu6050_hw hw_info[] = {
 		.config = &chip_config_6050,
 	},
 };
+
+static bool fake_asleep;
 
 int inv_mpu6050_switch_engine(struct inv_mpu6050_state *st, bool en, u32 mask)
 {
@@ -424,6 +426,20 @@ static int inv_mpu6050_write_gyro_scale(struct inv_mpu6050_state *st, int val)
 	return -EINVAL;
 }
 
+/*
+ * inv_firmware_loaded() -  calling this function will change
+ *                        firmware load
+ */
+static int inv_firmware_loaded(struct inv_mpu6050_state *st, int data)
+{
+	if (data)
+		return -EINVAL;
+	st->chip_config.firmware_loaded = 0;
+	st->chip_config.dmp_on = 0;
+
+	return 0;
+}
+
 static int inv_write_raw_get_fmt(struct iio_dev *indio_dev,
 				 struct iio_chan_spec const *chan, long mask)
 {
@@ -624,7 +640,7 @@ static ssize_t _dmp_bias_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct iio_dev *indio_dev = dev_get_drvdata(dev);
-	struct inv_mpu_state *st = iio_priv(indio_dev);
+	struct inv_mpu6050_state *st = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	int result, data, tmp;
 
@@ -713,7 +729,7 @@ static ssize_t _dmp_attr_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct iio_dev *indio_dev = dev_get_drvdata(dev);
-	struct inv_mpu_state *st = iio_priv(indio_dev);
+	struct inv_mpu6050_state *st = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	int result, data;
 
@@ -927,7 +943,7 @@ static ssize_t inv_attr_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct iio_dev *indio_dev = dev_get_drvdata(dev);
-	struct inv_mpu_state *st = iio_priv(indio_dev);
+	struct inv_mpu6050_state *st = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	int result, axis;
 	s8 *m;
@@ -1055,18 +1071,6 @@ static ssize_t inv_attr_show(struct device *dev,
 		return sprintf(buf, "%d\n", st->chip_config.firmware_loaded);
 	case ATTR_SAMPLING_FREQ:
 		return sprintf(buf, "%d\n", st->chip_config.new_fifo_rate);
-	case ATTR_SELF_TEST:
-		mutex_lock(&indio_dev->mlock);
-		if (st->chip_config.enable) {
-			mutex_unlock(&indio_dev->mlock);
-			return -EBUSY;
-		}
-		if (INV_MPU3050 == st->chip_type)
-			result = 1;
-		else
-			result = inv_hw_self_test(st);
-		mutex_unlock(&indio_dev->mlock);
-		return sprintf(buf, "%d\n", result);
 	case ATTR_GYRO_MATRIX:
 		m = st->plat_data.orientation;
 		return sprintf(buf, "%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
@@ -1091,7 +1095,7 @@ static ssize_t _attr_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct iio_dev *indio_dev = dev_get_drvdata(dev);
-	struct inv_mpu_state *st = iio_priv(indio_dev);
+	struct inv_mpu6050_state *st = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	int data;
 	u8 d, axis;
@@ -1321,22 +1325,8 @@ static IIO_DEV_ATTR_SAMP_FREQ(S_IRUGO | S_IWUSR, inv_fifo_rate_show,
 /* New sysfs entries from android driver. */
 static IIO_DEVICE_ATTR(gyro_enable, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_GYRO_ENABLE);
-/* special sysfs */
-static DEVICE_ATTR(reg_dump, S_IRUGO, inv_reg_dump_show, NULL);
 
-/* event based sysfs, needs poll to read */
-static DEVICE_ATTR(event_tap, S_IRUGO, inv_dmp_tap_show, NULL);
-static DEVICE_ATTR(event_display_orientation, S_IRUGO,
-	inv_dmp_display_orient_show, NULL);
-static DEVICE_ATTR(event_accel_motion, S_IRUGO, inv_accel_motion_show, NULL);
-static DEVICE_ATTR(event_smd, S_IRUGO, inv_smd_show, NULL);
 
-/* master enable method */
-static DEVICE_ATTR(master_enable, S_IRUGO | S_IWUSR, inv_master_enable_show,
-					inv_master_enable_store);
-
-/* special run time sysfs entry, read only */
-static DEVICE_ATTR(flush_batch, S_IRUGO, inv_flush_batch_show, NULL);
 
 /* DMP sysfs with power on/off */
 static IIO_DEVICE_ATTR(in_accel_x_dmp_bias, S_IRUGO | S_IWUSR,
@@ -1484,8 +1474,6 @@ static IIO_DEVICE_ATTR(accel_matrix, S_IRUGO, inv_attr_show, NULL,
 /* Newly modified inv_attributes from android driver */
 static struct attribute *inv_attributes[] = {
 	&iio_const_attr_sampling_frequency_available.dev_attr.attr,
-	&dev_attr_reg_dump.attr,
-	&dev_attr_master_enable.attr,
 	&iio_dev_attr_in_anglvel_scale.dev_attr.attr,
 	&iio_dev_attr_in_anglvel_x_calibbias.dev_attr.attr,
 	&iio_dev_attr_in_anglvel_y_calibbias.dev_attr.attr,
@@ -1496,17 +1484,12 @@ static struct attribute *inv_attributes[] = {
 	&iio_dev_attr_in_anglvel_self_test_scale.dev_attr.attr,
 	&iio_dev_attr_self_test_samples.dev_attr.attr,
 	&iio_dev_attr_self_test_threshold.dev_attr.attr,
-	&iio_dev_attr_gyro_enable.dev_attr.attr,
 	&iio_dev_attr_gyro_fifo_enable.dev_attr.attr,
 	&iio_dev_attr_gyro_rate.dev_attr.attr,
 	&iio_dev_attr_power_state.dev_attr.attr,
 	&iio_dev_attr_sampling_frequency.dev_attr.attr,
 	&iio_dev_attr_self_test.dev_attr.attr,
 	&iio_dev_attr_gyro_matrix.dev_attr.attr,
-	&iio_dev_attr_secondary_name.dev_attr.attr,
-	&dev_attr_event_accel_motion.attr,
-	&dev_attr_event_smd.attr,
-	&dev_attr_flush_batch.attr,
 	&iio_dev_attr_in_accel_scale.dev_attr.attr,
 	&iio_dev_attr_in_accel_x_calibbias.dev_attr.attr,
 	&iio_dev_attr_in_accel_y_calibbias.dev_attr.attr,
