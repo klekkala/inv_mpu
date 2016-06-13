@@ -948,8 +948,6 @@ static ssize_t inv_attr_show(struct device *dev,
 					accel_scale[st->chip_config.accel_fs] *
 					st->chip_info.multi);
 	}
-	case ATTR_COMPASS_SCALE:
-		st->slave_compass->get_scale(st, &result);
 
 		return sprintf(buf, "%d\n", result);
 	case ATTR_ACCEL_X_CALIBBIAS:
@@ -1051,10 +1049,6 @@ static ssize_t inv_attr_show(struct device *dev,
 		return sprintf(buf, "%d\n", st->sensor[SENSOR_ACCEL].on);
 	case ATTR_ACCEL_RATE:
 		return sprintf(buf, "%d\n", st->sensor[SENSOR_ACCEL].rate);
-	case ATTR_COMPASS_ENABLE:
-		return sprintf(buf, "%d\n", st->sensor[SENSOR_COMPASS].on);
-	case ATTR_COMPASS_RATE:
-		return sprintf(buf, "%d\n", st->sensor[SENSOR_COMPASS].rate);
 	case ATTR_POWER_STATE:
 		return sprintf(buf, "%d\n", !fake_asleep);
 	case ATTR_FIRMWARE_LOADED:
@@ -1086,71 +1080,8 @@ static ssize_t inv_attr_show(struct device *dev,
 			m = st->plat_data.orientation;
 		return sprintf(buf, "%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
 			m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
-	case ATTR_COMPASS_MATRIX:
-		if (st->plat_data.sec_slave_type ==
-				SECONDARY_SLAVE_TYPE_COMPASS)
-			m =
-			st->plat_data.secondary_orientation;
-		else
-			return -ENODEV;
-		return sprintf(buf, "%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
-			m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
-	case ATTR_SECONDARY_NAME:
-	{
-		const char *n[] = {"NULL", "AK8975", "AK8972", "AK8963",
-					"BMA250", "MLX90399"};
-		switch (st->plat_data.sec_slave_id) {
-		case COMPASS_ID_AK8975:
-			return sprintf(buf, "%s\n", n[1]);
-		case COMPASS_ID_AK8972:
-			return sprintf(buf, "%s\n", n[2]);
-		case COMPASS_ID_AK8963:
-			return sprintf(buf, "%s\n", n[3]);
-		case ACCEL_ID_BMA250:
-			return sprintf(buf, "%s\n", n[4]);
-		case COMPASS_ID_MLX90399:
-			return sprintf(buf, "%s\n", n[5]);
-		default:
-			return sprintf(buf, "%s\n", n[0]);
-		}
-	}
-#ifdef CONFIG_INV_TESTING
-	case ATTR_REG_WRITE:
-		return sprintf(buf, "1\n");
-	case ATTR_COMPASS_SENS:
-	{
-		/* these 2 conditions should never be met, since the
-		   'compass_sens' sysfs entry should be hidden if the compass
-		   is not an AKM */
-		if (st->plat_data.sec_slave_type !=
-					SECONDARY_SLAVE_TYPE_COMPASS)
-			return -ENODEV;
-		if (st->plat_data.sec_slave_id != COMPASS_ID_AK8975 &&
-		    st->plat_data.sec_slave_id != COMPASS_ID_AK8972 &&
-		    st->plat_data.sec_slave_id != COMPASS_ID_AK8963)
-			return -ENODEV;
-		m = st->chip_info.compass_sens;
-		return sprintf(buf, "%d,%d,%d\n", m[0], m[1], m[2]);
-	}
-	case ATTR_DEBUG_SMD_EXE_STATE:
-	{
-		u8 d[2];
 
-		result = st->set_power_state(st, true);
-		mpu_memory_read(st, st->i2c_addr,
-				inv_dmp_get_address(KEY_SMD_EXE_STATE), 2, d);
-		return sprintf(buf, "%d\n", (short)be16_to_cpup((__be16 *)(d)));
-	}
-	case ATTR_DEBUG_SMD_DELAY_CNTR:
-	{
-		u8 d[4];
 
-		result = st->set_power_state(st, true);
-		mpu_memory_read(st, st->i2c_addr,
-				inv_dmp_get_address(KEY_SMD_DELAY_CNTR), 4, d);
-		return sprintf(buf, "%d\n", (int)be32_to_cpup((__be32 *)(d)));
-	}
-#endif
 	default:
 		return -EPERM;
 	}
@@ -1230,9 +1161,6 @@ static ssize_t _attr_store(struct device *dev,
 	case ATTR_ACCEL_SCALE:
 		result = inv_write_accel_fs(st, data);
 		break;
-	case ATTR_COMPASS_SCALE:
-		result = st->slave_compass->set_scale(st, data);
-		break;
 	case ATTR_SELF_TEST_SAMPLES:
 		if (data > ST_MAX_SAMPLES || data < 0) {
 			result = -EINVAL;
@@ -1268,21 +1196,6 @@ static ssize_t _attr_store(struct device *dev,
 		st->sensor[SENSOR_ACCEL].dur  = MPU_DEFAULT_DMP_FREQ / data;
 		st->sensor[SENSOR_ACCEL].dur  *= DMP_INTERVAL_INIT;
 		break;
-	case ATTR_COMPASS_ENABLE:
-		st->sensor[SENSOR_COMPASS].on = !!data;
-		break;
-	case ATTR_COMPASS_RATE:
-		if (data <= 0) {
-			result = -EINVAL;
-			goto attr_store_fail;
-		}
-		if ((MSEC_PER_SEC / st->slave_compass->rate_scale) < data)
-			data = MSEC_PER_SEC / st->slave_compass->rate_scale;
-
-		st->sensor[SENSOR_COMPASS].rate = data;
-		st->sensor[SENSOR_COMPASS].dur  = MPU_DEFAULT_DMP_FREQ / data;
-		st->sensor[SENSOR_COMPASS].dur  *= DMP_INTERVAL_INIT;
-		break;
 	case ATTR_POWER_STATE:
 		fake_asleep = !data;
 		break;
@@ -1292,80 +1205,7 @@ static ssize_t _attr_store(struct device *dev,
 	case ATTR_SAMPLING_FREQ:
 		result = inv_fifo_rate_store(st, data);
 		break;
-#ifdef CONFIG_INV_TESTING
-	case ATTR_COMPASS_MATRIX:
-	{
-		char *str;
-		__s8 m[9];
-		d = 0;
-		if (st->plat_data.sec_slave_type == SECONDARY_SLAVE_TYPE_NONE)
-			return -ENODEV;
-		while ((str = strsep((char **)&buf, ","))) {
-			if (d >= 9) {
-				result = -EINVAL;
-				goto attr_store_fail;
-			}
-			result = kstrtoint(str, 10, &data);
-			if (result)
-				goto attr_store_fail;
-			if (data < -1 || data > 1) {
-				result = -EINVAL;
-				goto attr_store_fail;
-			}
-			m[d] = data;
-			d++;
-		}
-		if (d < 9) {
-			result = -EINVAL;
-			goto attr_store_fail;
-		}
-		memcpy(st->plat_data.secondary_orientation, m, sizeof(m));
-		pr_debug(KERN_INFO
-			 "compass_matrix: %d,%d,%d,%d,%d,%d,%d,%d,%d\n",
-			 m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
-		break;
-	}
-	case ATTR_COMPASS_SENS:
-	{
-		char *str;
-		__s8 s[3];
-		d = 0;
-		/* these 2 conditions should never be met, since the
-		   'compass_sens' sysfs entry should be hidden if the compass
-		   is not an AKM */
-		if (st->plat_data.sec_slave_type == SECONDARY_SLAVE_TYPE_NONE)
-			return -ENODEV;
-		if (st->plat_data.sec_slave_id != COMPASS_ID_AK8975 &&
-		    st->plat_data.sec_slave_id != COMPASS_ID_AK8972 &&
-		    st->plat_data.sec_slave_id != COMPASS_ID_AK8963)
-			return -ENODEV;
-		/* read the input data, expecting 3 comma separated values */
-		while ((str = strsep((char **)&buf, ","))) {
-			if (d >= 3) {
-				result = -EINVAL;
-				goto attr_store_fail;
-			}
-			result = kstrtoint(str, 10, &data);
-			if (result)
-				goto attr_store_fail;
-			if (data < 0 || data > 255) {
-				result = -EINVAL;
-				goto attr_store_fail;
-			}
-			s[d] = data;
-			d++;
-		}
-		if (d < 3) {
-			result = -EINVAL;
-			goto attr_store_fail;
-		}
-		/* store the new compass sensitivity adjustment */
-		memcpy(st->chip_info.compass_sens, s, sizeof(s));
-		pr_debug(KERN_INFO
-			 "compass_sens: %d,%d,%d\n", s[0], s[1], s[2]);
-		break;
-	}
-#endif
+
 	default:
 		result = -EINVAL;
 		goto attr_store_fail;
@@ -1569,8 +1409,6 @@ static IIO_DEVICE_ATTR(in_accel_scale, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_ACCEL_SCALE);
 static IIO_DEVICE_ATTR(in_anglvel_scale, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_GYRO_SCALE);
-static IIO_DEVICE_ATTR(in_magn_scale, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_attr_store, ATTR_COMPASS_SCALE);
 
 static IIO_DEVICE_ATTR(in_anglvel_x_offset, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_GYRO_X_OFFSET);
@@ -1604,11 +1442,6 @@ static IIO_DEVICE_ATTR(accel_fifo_enable, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_ACCEL_FIFO_ENABLE);
 static IIO_DEVICE_ATTR(accel_rate, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_ACCEL_RATE);
-
-static IIO_DEVICE_ATTR(compass_enable, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_attr_store, ATTR_COMPASS_ENABLE);
-static IIO_DEVICE_ATTR(compass_rate, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_attr_store, ATTR_COMPASS_RATE);
 
 static IIO_DEVICE_ATTR(power_state, S_IRUGO | S_IWUSR, inv_attr_show,
 	inv_attr_store, ATTR_POWER_STATE);
@@ -1645,12 +1478,6 @@ static IIO_DEVICE_ATTR(gyro_matrix, S_IRUGO, inv_attr_show, NULL,
 	ATTR_GYRO_MATRIX);
 static IIO_DEVICE_ATTR(accel_matrix, S_IRUGO, inv_attr_show, NULL,
 	ATTR_ACCEL_MATRIX);
-static IIO_DEVICE_ATTR(compass_matrix, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_attr_store, ATTR_COMPASS_MATRIX);
-static IIO_DEVICE_ATTR(compass_sens, S_IRUGO | S_IWUSR, inv_attr_show,
-	inv_attr_store, ATTR_COMPASS_SENS);
-static IIO_DEVICE_ATTR(compass_matrix, S_IRUGO, inv_attr_show, NULL,
-	ATTR_COMPASS_MATRIX);
 
 
 
