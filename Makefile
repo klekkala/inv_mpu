@@ -1,5 +1,6 @@
 #
-# Makefile for Invensense MPU6050 device.
+## Makefile for Invensense MPU6050 device.
+#
 #
 
 obj-$(CONFIG_INV_MPU6050_IIO) += inv-mpu6050.o
@@ -10,3 +11,9 @@ inv-mpu6050-i2c-objs := inv_mpu_i2c.o inv_mpu_acpi.o
 
 obj-$(CONFIG_INV_MPU6050_SPI) += inv-mpu6050-spi.o
 inv-mpu6050-spi-objs := inv_mpu_spi.o
+
+KDIR := /home/kiran/bb-kernel/KERNEL/
+all:
+	make -C $(KDIR) M=$(PWD) modules
+clean:
+	make -C $(KDIR) M=$(PWD) clean

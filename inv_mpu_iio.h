@@ -70,7 +70,6 @@ enum inv_devices {
 	INV_MPU6500,
 	INV_MPU6000,
 	INV_MPU9150,
-	INV_MPU9250,
 	INV_NUM_PARTS
 };
 
@@ -89,10 +88,8 @@ struct inv_mpu6050_chip_config {
 	unsigned int lpf:3;
 	unsigned int accl_fs:2;
 	unsigned int enable:1;
-	unsigned int has_compass:1;
 	unsigned int accl_fifo_enable:1;
 	unsigned int gyro_fifo_enable:1;
-	unsigned int magn_fifo_enable:1;
 	u16 fifo_rate;
 };
 
@@ -146,7 +143,6 @@ struct inv_mpu6050_state {
 /*register and associated bit definition*/
 #define INV_MPU6050_REG_ACCEL_OFFSET        0x06
 #define INV_MPU6050_REG_GYRO_OFFSET         0x13
-#define INV_MPU9250_REG_MAG_OFFSET			0x13
 
 #define INV_MPU6050_REG_SAMPLE_RATE_DIV     0x19
 #define INV_MPU6050_REG_CONFIG              0x1A
@@ -229,7 +225,6 @@ struct inv_mpu6050_state {
 #define INV_MPU6050_WHOAMI_VALUE		0x68
 #define INV_MPU6500_WHOAMI_VALUE		0x70
 #define INV_MPU9150_WHOAMI_VALUE		0x68
-#define INV_MPU9250_WHOAMI_VALUE		0x70
 
 /* scan element definition */
 enum inv_mpu6050_scan {
@@ -239,9 +234,6 @@ enum inv_mpu6050_scan {
 	INV_MPU6050_SCAN_GYRO_X,
 	INV_MPU6050_SCAN_GYRO_Y,
 	INV_MPU6050_SCAN_GYRO_Z,
-	INV_MPU9250_SCAN_MAG_X,
-	INV_MPU9250_SCAN_MAG_Y,
-	INV_MPU9250_SCAN_MAG_Z,
 	INV_MPU6050_SCAN_TIMESTAMP,
 };
 
@@ -300,4 +292,3 @@ int inv_mpu_core_probe(struct regmap *regmap, int irq, const char *name,
 int inv_mpu_core_remove(struct device *dev);
 int inv_mpu6050_set_power_itg(struct inv_mpu6050_state *st, bool power_on);
 extern const struct dev_pm_ops inv_mpu_pmops;
-int inv_mpu_setup_compass_slave(struct inv_mpu_state *st);
